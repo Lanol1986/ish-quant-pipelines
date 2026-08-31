@@ -1,0 +1,171 @@
+# =============================================================================
+# Study configuration template
+#
+# Copy this file, rename it for your study, and edit. Nothing study-specific is
+# ever edited into a pipeline script.
+#
+# REQUIRED fields stop the pipeline if absent.
+# RECORD fields do not stop the pipeline, but appear in the run manifest under
+# `unrecorded_parameters` if left blank. Those are the free parameters that
+# silently determine results, so an empty one is itself a finding.
+# =============================================================================
+
+study:
+  name: "STUDY_ID"                      # REQUIRED
+  description: >
+    One or two sentences. Compound, species, question.
+  analyst: "surname"
+  date_started: "2026-01-01"
+
+# -----------------------------------------------------------------------------
+paths:
+  input_dir:  "/path/to/exports"        # REQUIRED
+  output_dir: "/path/to/results"        # REQUIRED, created if absent
+  file_pattern: null                    # regex; null uses the pipeline default
+  id_regex: "^([A-Za-z0-9.]+?)_"        # first capture group is the animal id
+  delimiter: null                       # "," or "\t"; null uses the default
+  area_table: null                      # CSV: animal_id, region, area_mm2
+
+# -----------------------------------------------------------------------------
+assay:
+  type: "RNAscope 2.5 HD RED"
+  chemistry: "AP / Fast Red"            # "HRP / DAB", "TSA / Opal", ...
+  probes:
+    - name: "TARGET"
+      target: "mRNA"                    # mRNA | siRNA guide strand | ASO ...
+      channel: "Red"
+      export_name: null                 # exact probe string in the column
+                                        # headers, if it differs from `name`
+  antibodies: []                        # pipelines 03 and 04
+  positive_control_probe: "PPIB"        # a small-RNA positive control for
+                                        # smRNA and ASO probes
+  negative_control_probe: "dapB"        # a scramble probe for smRNA and ASO
+  negative_control_available: true
+  negative_control_tissue: null         # a tissue where the target is absent
+                                        # is a built-in specificity control
+
+# -----------------------------------------------------------------------------
+design:
+  type: "two_group"                     # two_group | multi_group | dose_response
+  group_levels: ["Control", "Treated"]  # controls factor ordering everywhere
+  control_group: "Control"              # REQUIRED
+
+  animals:                              # REQUIRED, one entry per animal
+    - {animal_id: "A1", group: "Control", sex: "Male"}
+    - {animal_id: "B1", group: "Treated", sex: "Male"}
+    # dose: 0                           # REQUIRED when type is dose_response
+
+  # Animals deliberately absent from the input directory. Listing them here is
+  # how an exclusion becomes a recorded decision rather than a silent one. The
+  # reason must be image-based and must predate looking at the numbers.
+  expected_absent: {}
+    # "B2": "Section folded over the region of interest; not scanned."
+
+  regions: ["RegionA", "RegionB"]
+  region_aliases: {}                    # RegionA: ["ctx", "cortical"]
+
+  # Pipeline 04 only. Renaming an anatomical annotation asserts the tissue is
+  # not what the annotation said it was, so it needs a reason, image
+  # verification, and a scope. A global rule would silently catch a future
+  # sample where the original label was correct.
+  annotation_recodes: []
+    # - from: "Wrong label"
+    #   to: "Correct label"
+    #   animal_id: ["A1"]
+    #   reason: "Verified against the image on <date> by <name>."
+
+# -----------------------------------------------------------------------------
+acquisition:                            # RECORD all of these
+  instrument: "SCANNER_MODEL"
+  objective_magnification: 40           # single-dot resolution needs 40-63x;
+                                        # 20x gives regional context and
+                                        # intensity, not countable dots
+  pixel_size_um: null                   # from image metadata, not assumed
+  section_thickness_um: null            # a first-order multiplier on puncta
+                                        # per cell, and not corrected for
+  z_handling: "single plane"            # "z-stack, n planes, step x um" |
+                                        # "extended focus projection"
+  exposure_fixed_across_slides: null    # do not re-autoexpose per slide
+  batch_randomised: null                # alternate control and treated
+  control_animal_in_every_batch: null
+  unmixing_library: null                # fluorescence: needs a DAPI-only slide
+                                        # AND an unstained sample from the same
+                                        # study, so autofluorescence becomes
+                                        # its own endmember
+
+# -----------------------------------------------------------------------------
+detection:                              # RECORD all of these
+  software: "SOFTWARE"
+  software_version: null
+  export_level: "object"                # pipeline 04: summary | object
+  segmentation: "nuclear segmentation + expansion"
+  cell_expansion_radius_um: null        # assigns puncta to nuclei, and governs
+                                        # the dual-positive rate
+  min_spot_size: null
+  spot_intensity_threshold: null
+  probe_copy_intensity_threshold: null
+  marker_thresholds: {}
+  stain_vectors_fixed: null             # false = per-image estimation, which
+                                        # moves the optical-density scale from
+                                        # slide to slide
+  roi_selection: "whole slide"          # or "operator-selected fields"
+  operator_blinded: null                # relevant if ROIs were selected
+
+# -----------------------------------------------------------------------------
+readout:
+  primary: "pct_positive"               # REQUIRED. pct_positive |
+                                        # counts_per_cell | burden_index |
+                                        # area_fraction | integrated_intensity
+  count_column: "spots_single"          # which parsed column carries it
+  positivity_threshold: 1               # REQUIRED
+  threshold_source: "negative_control_probe"   # REQUIRED.
+                                        # negative_control_probe |
+                                        # control_animal | fixed_declared
+  threshold_n_sd: 1                     # mean + n SD of non-zero puncta on
+                                        # the negative control
+  countable_regime_max: 15              # above this, counts are an index
+  single_dot_calibration: null          # RECORD. The assumed single-spot area
+                                        # or single-copy intensity behind any
+                                        # cluster-derived count
+  bins: [1, 4, 10]                      # lower bounds above zero for H-score
+  bin_scale_name: "custom_0_3_declared_in_methods"
+  # Scoring scales for this assay are not standardised. Name yours here and
+  # define it in the methods every time.
+  pattern_analysis: false               # pipeline 04, object level
+
+# -----------------------------------------------------------------------------
+normalisation:
+  denominator: "per_cell"               # per_cell | per_mm2 | per_nuclear_area
+  # per_cell depends entirely on segmentation; cell-density differences between
+  #   groups become apparent expression differences.
+  # per_mm2 is confounded by cellularity, so always report cells/mm2 alongside.
+  # per_nuclear_area is rarely right: nuclear area is not cytoplasmic volume
+  #   and the signal is largely cytoplasmic.
+  report_cells_per_mm2: true
+  housekeeping_gate:                    # inclusion gate, NOT a divisor
+    enabled: false
+    column: null
+    min_value: null
+
+# -----------------------------------------------------------------------------
+statistics:
+  fit_models: true
+  random_effects: "(1 | animal_id/section_id)"
+  zero_inflation: "~ group"             # "~ 1" for a constant hurdle
+  families_to_compare: ["poisson", "nbinom1", "nbinom2"]
+  multiplicity_grid: ["region"]
+  multiplicity_method: "BH"
+  # dose_response designs
+  dose_trend: false
+  dose_log: true
+  covariates: ["sex"]
+  # pipeline 03
+  dual_density_model: true
+
+# -----------------------------------------------------------------------------
+output:
+  prefix: "v1"
+  save_cell_level: false                # cell-level tables are large; QC only
+  figure_width: 9
+  figure_height: 6
+  dpi: 300
