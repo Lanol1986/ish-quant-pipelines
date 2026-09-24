@@ -1924,13 +1924,15 @@ main <- function(config_path) {
           fit <- try(fit_hurdle_nb(
             d, count_col, fixed = "group",
             random = cfg$statistics$random_effects,
-            zi = cfg$statistics$zero_inflation %||% "~ group"), silent = TRUE)
+            threshold = threshold,
+            family = cfg$statistics$positive_count_family %||% "nbinom2"),
+            silent = TRUE)
           if (inherits(fit, "try-error")) return(NULL)
           saveRDS(fit, file.path(dirs$models, paste0("hurdle_nb_", rg, ".rds")))
           icc <- report_icc(fit)
           if (!is.null(icc)) capture.output(print(icc),
             file = file.path(dirs$models, paste0("icc_", rg, ".txt")))
-          dplyr::mutate(tidy_model(fit), region = rg)
+          dplyr::mutate(tidy_hurdle_model(fit), region = rg)
         }))
 
       if (nrow(fits)) {
