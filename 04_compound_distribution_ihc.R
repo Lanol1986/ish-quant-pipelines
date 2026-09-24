@@ -2182,9 +2182,11 @@ main <- function(config_path) {
       fit <- try(fit_hurdle_nb(
         treated, compound_col, fixed = paste0(marker_col, " + region"),
         random = cfg$statistics$random_effects,
-        zi = paste0("~ ", marker_col)), silent = TRUE)
+        threshold = cfg$readout$positivity_threshold,
+        family = cfg$statistics$positive_count_family %||% "nbinom2"),
+        silent = TRUE)
       if (!inherits(fit, "try-error")) {
-        readr::write_csv(tidy_model(fit),
+        readr::write_csv(tidy_hurdle_model(fit),
                          file.path(dirs$models, "compartment_hurdle.csv"))
         saveRDS(fit, file.path(dirs$models, "compartment_hurdle.rds"))
         icc <- report_icc(fit)
