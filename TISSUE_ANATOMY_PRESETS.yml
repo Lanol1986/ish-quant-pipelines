@@ -1,0 +1,47 @@
+# Optional anatomical presets.
+# Copy the relevant block into a study config and adapt it to the annotation
+# vocabulary actually used in QuPath or HALO. These are templates, not an atlas.
+
+brain:
+  regions:
+    - Cortex
+    - Hippocampus
+    - Midbrain
+    - Pons_Medulla
+    - Cerebellum
+  subregions:
+    - Cerebellum_Molecular
+    - Cerebellum_Purkinje_cell
+    - Cerebellum_Granular
+    - Cerebellum_White_matter
+  subregion_parent:
+    Cerebellum_Molecular: Cerebellum
+    Cerebellum_Purkinje_cell: Cerebellum
+    Cerebellum_Granular: Cerebellum
+    Cerebellum_White_matter: Cerebellum
+
+kidney:
+  suggested_regions: [Cortex, Outer_medulla, Inner_medulla_Papilla]
+  note: "Use only compartments that were prospectively annotated and biologically relevant."
+
+eye:
+  suggested_regions:
+    [Cornea, Iris_Ciliary_body, Retina, RPE_Choroid, Optic_nerve]
+  note: "Retinal layers can be added as nested subregions when annotation quality supports them."
+
+testis:
+  suggested_regions: [Seminiferous_tubules, Interstitium]
+
+spleen:
+  suggested_regions: [White_pulp, Red_pulp]
+
+bone_marrow:
+  suggested_regions: [Marrow_space]
+  note: "Record exclusions of cortical bone, artefact and non-marrow tissue."
+
+heart:
+  suggested_regions: [Myocardium]
+
+liver:
+  suggested_regions: [Liver]
+  note: "Add lobular zonation only when the study question and annotations support it."

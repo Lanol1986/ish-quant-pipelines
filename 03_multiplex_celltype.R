@@ -89,15 +89,14 @@ safe_pct    <- function(x) { x <- x[!is.na(x)];    if (!length(x)) NA_real_ else
 
 #' Column headers to safe snake_case, handling the micro sign sensibly.
 make_safe_name <- function(x) {
-  x |>
-    gsub("\u00b5m\u00b2", "um2", x = _, fixed = TRUE) |>
-    gsub("\u03bcm\u00b2", "um2", x = _, fixed = TRUE) |>
-    gsub("\u00b5m", "um", x = _, fixed = TRUE) |>
-    gsub("\u03bcm", "um", x = _, fixed = TRUE) |>
-    gsub("[^A-Za-z0-9]+", "_", x = _) |>
-    gsub("_+", "_", x = _) |>
-    gsub("^_|_$", "", x = _) |>
-    tolower()
+  x <- gsub("\u00b5m\u00b2", "um2", x, fixed = TRUE)
+  x <- gsub("\u03bcm\u00b2", "um2", x, fixed = TRUE)
+  x <- gsub("\u00b5m",       "um",  x, fixed = TRUE)
+  x <- gsub("\u03bcm",       "um",  x, fixed = TRUE)
+  x <- gsub("[^A-Za-z0-9]+", "_", x)
+  x <- gsub("_+", "_", x)
+  x <- gsub("^_|_$", "", x)
+  tolower(x)
 }
 
 #' Map a free-text annotation name onto one of the declared regions.
@@ -1209,56 +1208,137 @@ design_power_note <- function(cfg) {
     })
 }
 
-#' Hurdle negative-binomial GLMM on per-cell counts.
+#' Two-part hurdle negative-binomial GLMM on per-cell counts.
 #'
-#' Fitting both parts says WHICH COMPONENT moved. A treatment that recruits more
-#' cells into expression is different biology from one that raises output per
-#' expressing cell, and a test on mean counts per cell cannot distinguish them.
+#' A hurdle model is fitted as two explicit models:
+#'   1) binomial GLMM for whether a cell has detectable signal;
+#'   2) zero-truncated NB GLMM for the count among positive cells.
 #'
-#' @param count_col integer counts. A cluster-derived estimate is an index, not
-#'   a count; floor it first or use a genuine single-spot count.
+#' This is intentionally different from glmmTMB's `ziformula`, which specifies
+#' a zero-inflation mixture rather than a hurdle. The two components map directly
+#' to the biological estimands reported by the pipeline: distribution breadth
+#' and burden conditional on detectable signal.
+#'
+#' @param count_col integer count column. Cluster-derived continuous estimates
+#'   are indices and are not silently rounded for count-model inference.
+#' @param threshold positivity threshold used for the binomial hurdle.
 fit_hurdle_nb <- function(cell_data, count_col, fixed = "group",
                           random = "(1 | animal_id/section_id)",
-                          zi = "~ group", offset_col = NULL,
+                          threshold = 1, offset_col = NULL,
                           family = c("nbinom2", "nbinom1")) {
   .need_glmmTMB()
   family <- match.arg(family)
 
   y <- cell_data[[count_col]]
   if (any(abs(y - round(y)) > 1e-8, na.rm = TRUE)) {
-    stop(count_col, " is not integer-valued. Use a genuine count column, or ",
-         "floor() the estimate and record that in the methods.", call. = FALSE)
+    stop(count_col, " is not integer-valued. Do not round a cluster-derived ",
+         "index into a count for inference; use a continuous positive-burden ",
+         "model or a genuine single-spot count column.", call. = FALSE)
   }
+
+  d <- dplyr::mutate(cell_data,
+                     .hurdle_count = as.integer(.data[[count_col]]),
+                     .hurdle_pos   = .hurdle_count >= threshold)
 
   rhs <- paste(fixed, random, sep = " + ")
   if (!is.null(offset_col)) rhs <- paste0(rhs, " + offset(log(", offset_col, "))")
 
-  glmmTMB::glmmTMB(
-    stats::as.formula(paste(count_col, "~", rhs)),
-    family    = if (family == "nbinom2") glmmTMB::nbinom2() else glmmTMB::nbinom1(),
-    ziformula = stats::as.formula(zi),
-    data      = cell_data)
+  fit_pos <- glmmTMB::glmmTMB(
+    stats::as.formula(paste(".hurdle_pos ~", rhs)),
+    family = stats::binomial(), data = d)
+
+  d_pos <- dplyr::filter(d, .hurdle_pos)
+  if (!nrow(d_pos)) {
+    stop("No positive cells at threshold ", threshold,
+         "; positive-burden component cannot be fitted.", call. = FALSE)
+  }
+
+  positive_family <- if (family == "nbinom2") {
+    glmmTMB::truncated_nbinom2()
+  } else {
+    glmmTMB::truncated_nbinom1()
+  }
+
+  fit_burden <- glmmTMB::glmmTMB(
+    stats::as.formula(paste(".hurdle_count ~", rhs)),
+    family = positive_family, data = d_pos)
+
+  structure(
+    list(positivity = fit_pos, positive_burden = fit_burden,
+         threshold = threshold, count_col = count_col, family = family),
+    class = "ish_hurdle")
 }
 
-#' Compare Poisson, NB1 and NB2 by AIC. Assume NB, but test it.
-compare_count_families <- function(cell_data, count_col, fixed = "group",
-                                   random = "(1 | animal_id/section_id)",
-                                   zi = "~ 1") {
+#' Zero-truncated NB GLMM for burden among already-positive cells.
+fit_positive_nb <- function(cell_data, count_col, fixed = "group",
+                            random = "(1 | animal_id/section_id)",
+                            offset_col = NULL,
+                            family = c("nbinom2", "nbinom1")) {
   .need_glmmTMB()
-  form <- stats::as.formula(paste(count_col, "~", paste(fixed, random, sep = " + ")))
-  zif  <- stats::as.formula(zi)
+  family <- match.arg(family)
+  y <- cell_data[[count_col]]
 
-  fams <- list(poisson = stats::poisson(),
-               nbinom1 = glmmTMB::nbinom1(),
-               nbinom2 = glmmTMB::nbinom2())
+  if (any(abs(y - round(y)) > 1e-8, na.rm = TRUE)) {
+    stop(count_col, " is not integer-valued; use a continuous positive-burden ",
+         "model instead of rounding.", call. = FALSE)
+  }
+  if (any(y <= 0, na.rm = TRUE)) {
+    stop("fit_positive_nb() requires strictly positive counts.", call. = FALSE)
+  }
+
+  d <- dplyr::mutate(cell_data, .positive_count = as.integer(.data[[count_col]]))
+  rhs <- paste(fixed, random, sep = " + ")
+  if (!is.null(offset_col)) rhs <- paste0(rhs, " + offset(log(", offset_col, "))")
+
+  fam <- if (family == "nbinom2") glmmTMB::truncated_nbinom2()
+         else glmmTMB::truncated_nbinom1()
+
+  glmmTMB::glmmTMB(
+    stats::as.formula(paste(".positive_count ~", rhs)),
+    family = fam, data = d)
+}
+
+#' Compare zero-truncated Poisson, NB1 and NB2 for positive count burden.
+#'
+#' Family selection is performed on the positive part of the hurdle only.
+#' Structural zeros are handled by the separate binomial component.
+compare_count_families <- function(cell_data, count_col, fixed = "group",
+                                   random = "(1 | animal_id/section_id)") {
+  .need_glmmTMB()
+  y <- cell_data[[count_col]]
+  if (any(abs(y - round(y)) > 1e-8, na.rm = TRUE)) {
+    return(tibble::tibble(
+      family = c("truncated_poisson", "truncated_nbinom1", "truncated_nbinom2"),
+      converged = FALSE, AIC = NA_real_, logLik = NA_real_,
+      note = "Skipped: count column is not integer-valued."))
+  }
+
+  d <- dplyr::filter(
+    dplyr::mutate(cell_data, .positive_count = as.integer(.data[[count_col]])),
+    .positive_count > 0)
+
+  if (!nrow(d)) {
+    return(tibble::tibble(
+      family = c("truncated_poisson", "truncated_nbinom1", "truncated_nbinom2"),
+      converged = FALSE, AIC = NA_real_, logLik = NA_real_,
+      note = "Skipped: no positive counts."))
+  }
+
+  form <- stats::as.formula(
+    paste(".positive_count ~", paste(fixed, random, sep = " + ")))
+  fams <- list(
+    truncated_poisson = glmmTMB::truncated_poisson(),
+    truncated_nbinom1 = glmmTMB::truncated_nbinom1(),
+    truncated_nbinom2 = glmmTMB::truncated_nbinom2())
 
   purrr::imap_dfr(fams, function(f, nm) {
-    fit <- try(glmmTMB::glmmTMB(form, family = f, ziformula = zif,
-                                data = cell_data), silent = TRUE)
+    fit <- try(glmmTMB::glmmTMB(form, family = f, data = d), silent = TRUE)
     ok <- !inherits(fit, "try-error")
-    tibble::tibble(family = nm, converged = ok,
-                   AIC    = if (ok) stats::AIC(fit) else NA_real_,
-                   logLik = if (ok) as.numeric(stats::logLik(fit)) else NA_real_)
+    tibble::tibble(
+      family = nm, converged = ok,
+      AIC = if (ok) stats::AIC(fit) else NA_real_,
+      logLik = if (ok) as.numeric(stats::logLik(fit)) else NA_real_,
+      note = if (ok) "" else "model failed")
   }) |>
     dplyr::arrange(AIC)
 }
@@ -1349,6 +1429,23 @@ tidy_model <- function(fit, exponentiate = TRUE, conf_level = 0.95) {
   } else {
     dplyr::mutate(out, scale = "link scale")
   }
+}
+
+#' Tidy both components of a two-part hurdle model.
+tidy_hurdle_model <- function(fit, conf_level = 0.95) {
+  if (!inherits(fit, "ish_hurdle")) {
+    stop("tidy_hurdle_model() requires an ish_hurdle object.", call. = FALSE)
+  }
+  dplyr::bind_rows(
+    tidy_model(fit$positivity, exponentiate = TRUE, conf_level = conf_level) |>
+      dplyr::mutate(
+        component = "positivity",
+        estimand = "odds ratio for detectable signal"),
+    tidy_model(fit$positive_burden, exponentiate = TRUE, conf_level = conf_level) |>
+      dplyr::mutate(
+        component = "positive_burden",
+        estimand = "ratio of mean count among positive cells")
+  )
 }
 
 #' Benjamini-Hochberg across the declared grid.
@@ -1820,13 +1917,36 @@ main <- function(config_path) {
     if (src %in% names(cell_data) && !identical(src, nm)) cell_data[[nm]] <- cell_data[[src]]
   }
 
+  region_col <- make_safe_name(cols$region)
+  raw_anatomy <- cell_data[[region_col]]
+
   cell_data$region <- resolve_region(
-    cell_data[[make_safe_name(cols$region)]], cfg$design$regions,
-    cfg$design$region_aliases)
+    raw_anatomy, cfg$design$regions, cfg$design$region_aliases)
+
+  # Optional nested anatomical level (for example cerebellar layers). A
+  # subregion is retained alongside its parent region; it never creates a new
+  # biological replicate.
+  cell_data$subregion <- NA_character_
+  if (!is.null(cfg$design$subregions) && length(cfg$design$subregions)) {
+    cell_data$subregion <- resolve_region(
+      raw_anatomy, cfg$design$subregions, cfg$design$subregion_aliases)
+
+    parents <- cfg$design$subregion_parent %||% list()
+    has_sub <- !is.na(cell_data$subregion)
+    if (any(has_sub) && length(parents)) {
+      mapped_parent <- vapply(
+        cell_data$subregion[has_sub],
+        function(x) as.character(parents[[x]] %||% NA_character_),
+        character(1))
+      replace_parent <- !is.na(mapped_parent) & nzchar(mapped_parent)
+      idx <- which(has_sub)[replace_parent]
+      cell_data$region[idx] <- mapped_parent[replace_parent]
+    }
+  }
 
   qc$unresolved_regions <- cell_data |>
     dplyr::filter(is.na(region)) |>
-    dplyr::count(animal_id, .data[[make_safe_name(cols$region)]], sort = TRUE)
+    dplyr::count(animal_id, .data[[region_col]], sort = TRUE)
   if (nrow(qc$unresolved_regions)) {
     warning(sum(qc$unresolved_regions$n), " cells have an unresolved analysis ",
             "region. See qc/unresolved_regions.csv.", call. = FALSE)
@@ -2033,6 +2153,42 @@ main <- function(config_path) {
   readr::write_csv(animal_tbl,
                    file.path(dirs$tables, "animal_celltype_summary.csv"))
 
+  # Optional nested-anatomy summary. This is especially useful for cerebellum,
+  # where molecular, Purkinje-cell, granular and white-matter layers can have
+  # very different cellular composition and target/compound signal.
+  subregion_tbl <- tibble::tibble()
+  if ("subregion" %in% names(analysis_data) &&
+      any(!is.na(analysis_data$subregion))) {
+    subregion_data <- dplyr::filter(
+      analysis_data,
+      !is.na(subregion),
+      as.character(celltype) %in% keep_types)
+
+    subregion_tbl <- summarise_to_animal(
+      subregion_data, target_col, threshold = threshold,
+      by = c("group", "animal_id", "region", "subregion", "celltype"),
+      bins = cfg$readout$bins, bin_scale_name = cfg$readout$bin_scale_name)
+
+    if (!is.na(compound_col) && compound_col %in% names(subregion_data)) {
+      sub_uptake <- subregion_data |>
+        dplyr::group_by(group, animal_id, region, subregion, celltype) |>
+        dplyr::summarise(
+          pct_compound_pos = 100 * mean(.data[[compound_col]] >= threshold,
+                                        na.rm = TRUE),
+          mean_compound = mean(.data[[compound_col]], na.rm = TRUE),
+          median_compound_among_pos = safe_median(
+            .data[[compound_col]][.data[[compound_col]] >= threshold]),
+          .groups = "drop")
+      subregion_tbl <- dplyr::left_join(
+        subregion_tbl, sub_uptake,
+        by = c("group", "animal_id", "region", "subregion", "celltype"))
+    }
+
+    readr::write_csv(
+      subregion_tbl,
+      file.path(dirs$tables, "animal_subregion_celltype_summary.csv"))
+  }
+
   ## Cross-region summary as the unweighted mean of region values, rather than a
   ## cell-count-weighted pool of unlike regions.
   global_tbl <- animal_tbl |>
@@ -2069,9 +2225,11 @@ main <- function(config_path) {
       fit <- try(fit_hurdle_nb(
         d, target_col, fixed = "group",
         random = cfg$statistics$random_effects,
-        zi = cfg$statistics$zero_inflation %||% "~ group"), silent = TRUE)
+        threshold = threshold,
+        family = cfg$statistics$positive_count_family %||% "nbinom2"),
+        silent = TRUE)
       if (inherits(fit, "try-error")) return(NULL)
-      dplyr::mutate(tidy_model(fit), region = reg, celltype = ct)
+      dplyr::mutate(tidy_hurdle_model(fit), region = reg, celltype = ct)
     }))
 
     if (nrow(fits)) {
@@ -2146,7 +2304,7 @@ main <- function(config_path) {
   message("Read qc/dual_rate.csv and qc/composition.csv before the results.\n")
 
   invisible(list(cfg = cfg, dirs = dirs, cell_data = cell_data,
-                 animal_tbl = animal_tbl, qc = qc))
+                 animal_tbl = animal_tbl, subregion_tbl = subregion_tbl, qc = qc))
 }
 
 if (!interactive() && !exists("SOURCED_FOR_INTERACTIVE_USE")) {

@@ -13,10 +13,11 @@ script.
 
 | # | Script | Assay | Endpoint |
 |---|---|---|---|
-| 01 | `pipelines/01_biodistribution_chromogenic.R` | Probe against the compound, chromogenic, brightfield | Compound **distribution** |
-| 02 | `pipelines/02_target_kd_chromogenic.R` | Probe against the target transcript, chromogenic | **Knockdown** vs control, or dose **trend** |
-| 03 | `pipelines/03_multiplex_celltype.R` | Multiplex compound + target + antibodies, object level | Cell-type-resolved knockdown and uptake |
-| 04 | `pipelines/04_compound_distribution_ihc.R` | Compound probe + one antibody, four-way phenotype | Distribution by compartment |
+| 01 | `01_biodistribution_chromogenic.R` | Probe against the compound, chromogenic, brightfield | Compound **distribution** |
+| 02 | `02_target_kd_chromogenic.R` | Probe against the target transcript, chromogenic | **Knockdown** vs control, or dose **trend** |
+| 03 | `03_multiplex_celltype.R` | Multiplex compound + target + antibodies, object level | Cell-type-resolved knockdown and uptake |
+| 04 | `04_compound_distribution_ihc.R` | Compound probe + one antibody, four-way phenotype | Distribution by compartment |
+| 05 | `05_multiplex_two_panel_integration.R` | Two or more independently analysed HALO AI multiplex panels | Panel-aware integration and concordance |
 
 Pipeline 02 has two modes, set by `design$type`:
 
@@ -57,14 +58,14 @@ en-dashes and `>=` in plot labels with dots and only warns through `mbcsToSbcs`.
 ## Run
 
 ```bash
-Rscript pipelines/02_target_kd_chromogenic.R config/my_study.yml
+Rscript 02_target_kd_chromogenic.R config/my_study.yml
 ```
 
 From a Jupyter notebook with the R kernel, see `notebooks/`:
 
 ```r
 CONFIG_PATH <- "config/my_study.yml"
-source("pipelines/02_target_kd_chromogenic.R")
+source("02_target_kd_chromogenic.R")
 ```
 
 The notebooks are thin drivers. Keeping the logic in `.R` files means git diffs
@@ -153,43 +154,47 @@ do not rescue it by dividing.
 
 ## Statistical approach
 
-Transcription is bursty, so steady-state counts are negative binomial rather
-than Poisson, with further overdispersion from cell heterogeneity,
-section-plane truncation and detection-efficiency variation across a slide.
+Cells are nested in sections within animals; the animal remains the experimental
+unit. The count workflow uses a **true two-part hurdle analysis** when discrete
+integer puncta are scientifically defensible:
 
-Zeros come in two kinds: structural (the cell does not express) and sampling (it
-does, but this plane missed it). A single negative binomial cannot separate
-them. A hurdle can, and its two parts are exactly the two quantities usually
-reported by hand:
+- **Part 1:** binomial mixed model for detectable signal.
+- **Part 2:** zero-truncated Poisson/NB mixed model among positive cells.
 
-- **Part 1**, logistic on P(count > 0) — the *% positive cells*.
-- **Part 2**, zero-truncated NB on the rest — the *puncta per positive cell*.
+This is intentionally not implemented with `glmmTMB(..., ziformula=...)`.
+A zero-inflated mixture and a hurdle model answer different questions. The
+pipeline exports the two components separately so distribution breadth and
+conditional burden cannot be conflated.
 
-Fitting both says which component moved. A treatment that recruits more cells
-into expression is different biology from one that raises output per expressing
-cell, and a test on mean counts per cell cannot distinguish them.
+Continuous or cluster-derived burden indices are not silently rounded into
+counts for model fitting. Use an appropriate continuous positive-burden model
+or a genuine integer single-spot column.
 
-```r
-m <- glmmTMB(
-  spots_single ~ group + (1 | animal_id/section_id),
-  family    = nbinom2,
-  ziformula = ~ group,
-  data      = cells)
-```
+Multiplicity is controlled over a predeclared grid, and cell-level inference
+never substitutes for animal replication.
 
-Unequal exposure goes in as `offset(log(area_mm2))`, never a pre-computed ratio,
-which forces the exposure coefficient to exactly 1 and discards the precision
-information. Counts are never `log(x+1)` transformed; the log is a **link**.
+### Platform split
 
-The ICC is reported. At 0.3, 500 cells per animal carry roughly the information
-of three independent observations.
+- **QuPath / brightfield:** chromogenic RED RNAscope and DIG-DAB.
+- **HALO AI / fluorescence:** duplex/multiplex smRNA/mRNA RNAscope + antibodies.
 
-Multiplicity is BH-FDR across the declared grid. `design_power_note()` prints
-the smallest achievable two-sided Wilcoxon p for the group sizes in the config:
-at 4 vs 4 that is 0.029, and at 3 vs 3 it is 0.10, so no amount of separation
-can reach 0.05.
+The platform-specific import/QC layers stay separate. Harmonisation starts at
+validated animal/region/cell-type summaries.
 
-Full background in `docs/STATISTICAL_NOTES.md`.
+### Nested brain anatomy
+
+Pipeline 03 supports an optional `subregion` level. For cerebellum this can
+retain the parent `Cerebellum` result while additionally reporting molecular,
+Purkinje-cell, granular and white-matter layers. Layers are repeated anatomical
+measurements within an animal, never additional biological replicates.
+
+### Two-panel integration
+
+Run each fluorescent panel independently through Pipeline 03 first. Pipeline 05
+then performs panel-aware integration at the animal level, checks shared-cell
+types for concordance, and normalises target mRNA to matched controls within
+panel before optional combination. Raw fluorescence intensity remains
+panel-specific unless cross-panel calibration is explicitly documented.
 
 ---
 

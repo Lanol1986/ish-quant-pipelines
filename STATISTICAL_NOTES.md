@@ -173,3 +173,30 @@ Worth knowing, and worth being the group that fills it.
 - **No reporting standard** for quantitative ISH. The nearest usable substitutes
   are the Schmied 2024 image-analysis checklist, QUAREP-LiMi and ARRIVE 2.0. See
   `METHODS_CHECKLIST.md`.
+
+
+## Hurdle versus zero inflation
+
+A hurdle and a zero-inflated count model are not synonyms. The pipeline uses two
+explicit models when the scientific question is “how many cells have detectable
+signal?” plus “how much signal is present among positive cells?”:
+
+1. binomial mixed model for positivity;
+2. zero-truncated Poisson/NB mixed model among positive cells.
+
+`glmmTMB`'s `ziformula` describes a zero-inflated mixture and is therefore
+not used as the hurdle implementation.
+
+Cluster-derived continuous indices, fluorescence intensity, labelled area and
+other non-integer burden measurements require continuous positive-burden models
+rather than forced count models.
+
+## Repeated panels and nested anatomy
+
+Adjacent sections or separate multiplex panels from the same animal are repeated
+measurements, not independent treatment replicates. Panel-specific QC and
+normalisation precede integration.
+
+Brain regions and cerebellar layers are also repeated anatomical measurements
+within an animal. Region/layer effects should be modeled with animal retained in
+the hierarchy, or summarized to animal-level estimands before group inference.

@@ -1,0 +1,26 @@
+study:
+  name: "STUDY_ID_two_panel_integration"
+  tissue: "Brain"
+  platform: "HALO AI"
+
+panels:
+  - name: "Panel_1"
+    summary_csv: "/path/to/panel1/results/tables/animal_celltype_summary.csv"
+  - name: "Panel_2"
+    summary_csv: "/path/to/panel2/results/tables/animal_celltype_summary.csv"
+
+integration:
+  control_group: "Vehicle"
+  target_metric: "mean_all_cells"
+  shared_celltypes: ["Neurons"]
+
+  # Normalise target mRNA to the matched vehicle within panel/region/cell type,
+  # check panel agreement, then choose how to represent the shared readout.
+  shared_target_method: "keep_panel"     # keep_panel | mean | median
+
+  # Do not pool raw fluorescence across panels by default.
+  combine_raw_intensity: false
+  intensity_calibrated_across_panels: false
+
+output:
+  dir: "/path/to/two_panel_integration_results"

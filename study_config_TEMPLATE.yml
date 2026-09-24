@@ -16,6 +16,19 @@ study:
     One or two sentences. Compound, species, question.
   analyst: "surname"
   date_started: "2026-01-01"
+  tissue: "TISSUE"
+  platform: "QuPath"                    # QuPath | HALO AI
+  assay_branch: "chromogenic"           # chromogenic | fluorescence
+
+oligo:
+  modality: "siRNA"                     # siRNA | ASO | other
+  detected_strand: "passenger"          # passenger | guide | ASO | not_applicable
+  target_gene: "TARGET"
+  chemistry_conjugate: null
+  probe_binding_region: null
+  activity_claim_from_compound_ish: false
+  # Compound ISH measures detectable distribution/burden. For siRNA, neither a
+  # passenger nor total guide-strand ISH signal is a spatial readout of RISC loading.
 
 # -----------------------------------------------------------------------------
 paths:
@@ -64,6 +77,27 @@ design:
   regions: ["RegionA", "RegionB"]
   region_aliases: {}                    # RegionA: ["ctx", "cortical"]
 
+  # Optional second anatomical level. Keep the raw annotation and map it to
+  # region + subregion/layer rather than hard-coding anatomy in an R script.
+  subregions: []
+  subregion_aliases: {}
+  # Brain example:
+  # regions: ["Cortex", "Hippocampus", "Midbrain", "Pons_Medulla", "Cerebellum"]
+  # subregions:
+  #   - "Cerebellum_Molecular"
+  #   - "Cerebellum_Purkinje_cell"
+  #   - "Cerebellum_Granular"
+  #   - "Cerebellum_White_matter"
+  # subregion_parent:
+  #   Cerebellum_Molecular: "Cerebellum"
+  #   Cerebellum_Purkinje_cell: "Cerebellum"
+  #   Cerebellum_Granular: "Cerebellum"
+  #   Cerebellum_White_matter: "Cerebellum"
+
+  global_summary:
+    primary: "pooled_cells"             # pooled_cells | region_balanced
+    also_report_region_balanced: true
+
   # Pipeline 04 only. Renaming an anatomical annotation asserts the tissue is
   # not what the annotation said it was, so it needs a reason, image
   # verification, and a scope. A global rule would silently catch a future
@@ -95,8 +129,9 @@ acquisition:                            # RECORD all of these
 
 # -----------------------------------------------------------------------------
 detection:                              # RECORD all of these
-  software: "SOFTWARE"
+  software: "SOFTWARE"                 # QuPath for chromogenic; HALO AI for fluorescence
   software_version: null
+  source_export: null                   # e.g. QuPath cell_subcellular_detection / HALO object export
   export_level: "object"                # pipeline 04: summary | object
   segmentation: "nuclear segmentation + expansion"
   cell_expansion_radius_um: null        # assigns puncta to nuclei, and governs
@@ -151,8 +186,11 @@ normalisation:
 statistics:
   fit_models: true
   random_effects: "(1 | animal_id/section_id)"
-  zero_inflation: "~ group"             # "~ 1" for a constant hurdle
-  families_to_compare: ["poisson", "nbinom1", "nbinom2"]
+  positive_count_family: "nbinom2"      # nbinom1 | nbinom2
+  # True hurdle models are fitted as two explicit components:
+  #   binomial positivity + zero-truncated NB positive burden.
+  # Do not use glmmTMB ziformula as a synonym for a hurdle.
+  families_to_compare: ["truncated_poisson", "truncated_nbinom1", "truncated_nbinom2"]
   multiplicity_grid: ["region"]
   multiplicity_method: "BH"
   # dose_response designs
