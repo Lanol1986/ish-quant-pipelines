@@ -1917,13 +1917,36 @@ main <- function(config_path) {
     if (src %in% names(cell_data) && !identical(src, nm)) cell_data[[nm]] <- cell_data[[src]]
   }
 
+  region_col <- make_safe_name(cols$region)
+  raw_anatomy <- cell_data[[region_col]]
+
   cell_data$region <- resolve_region(
-    cell_data[[make_safe_name(cols$region)]], cfg$design$regions,
-    cfg$design$region_aliases)
+    raw_anatomy, cfg$design$regions, cfg$design$region_aliases)
+
+  # Optional nested anatomical level (for example cerebellar layers). A
+  # subregion is retained alongside its parent region; it never creates a new
+  # biological replicate.
+  cell_data$subregion <- NA_character_
+  if (!is.null(cfg$design$subregions) && length(cfg$design$subregions)) {
+    cell_data$subregion <- resolve_region(
+      raw_anatomy, cfg$design$subregions, cfg$design$subregion_aliases)
+
+    parents <- cfg$design$subregion_parent %||% list()
+    has_sub <- !is.na(cell_data$subregion)
+    if (any(has_sub) && length(parents)) {
+      mapped_parent <- vapply(
+        cell_data$subregion[has_sub],
+        function(x) as.character(parents[[x]] %||% NA_character_),
+        character(1))
+      replace_parent <- !is.na(mapped_parent) & nzchar(mapped_parent)
+      idx <- which(has_sub)[replace_parent]
+      cell_data$region[idx] <- mapped_parent[replace_parent]
+    }
+  }
 
   qc$unresolved_regions <- cell_data |>
     dplyr::filter(is.na(region)) |>
-    dplyr::count(animal_id, .data[[make_safe_name(cols$region)]], sort = TRUE)
+    dplyr::count(animal_id, .data[[region_col]], sort = TRUE)
   if (nrow(qc$unresolved_regions)) {
     warning(sum(qc$unresolved_regions$n), " cells have an unresolved analysis ",
             "region. See qc/unresolved_regions.csv.", call. = FALSE)
@@ -2130,6 +2153,42 @@ main <- function(config_path) {
   readr::write_csv(animal_tbl,
                    file.path(dirs$tables, "animal_celltype_summary.csv"))
 
+  # Optional nested-anatomy summary. This is especially useful for cerebellum,
+  # where molecular, Purkinje-cell, granular and white-matter layers can have
+  # very different cellular composition and target/compound signal.
+  subregion_tbl <- tibble::tibble()
+  if ("subregion" %in% names(analysis_data) &&
+      any(!is.na(analysis_data$subregion))) {
+    subregion_data <- dplyr::filter(
+      analysis_data,
+      !is.na(subregion),
+      as.character(celltype) %in% keep_types)
+
+    subregion_tbl <- summarise_to_animal(
+      subregion_data, target_col, threshold = threshold,
+      by = c("group", "animal_id", "region", "subregion", "celltype"),
+      bins = cfg$readout$bins, bin_scale_name = cfg$readout$bin_scale_name)
+
+    if (!is.na(compound_col) && compound_col %in% names(subregion_data)) {
+      sub_uptake <- subregion_data |>
+        dplyr::group_by(group, animal_id, region, subregion, celltype) |>
+        dplyr::summarise(
+          pct_compound_pos = 100 * mean(.data[[compound_col]] >= threshold,
+                                        na.rm = TRUE),
+          mean_compound = mean(.data[[compound_col]], na.rm = TRUE),
+          median_compound_among_pos = safe_median(
+            .data[[compound_col]][.data[[compound_col]] >= threshold]),
+          .groups = "drop")
+      subregion_tbl <- dplyr::left_join(
+        subregion_tbl, sub_uptake,
+        by = c("group", "animal_id", "region", "subregion", "celltype"))
+    }
+
+    readr::write_csv(
+      subregion_tbl,
+      file.path(dirs$tables, "animal_subregion_celltype_summary.csv"))
+  }
+
   ## Cross-region summary as the unweighted mean of region values, rather than a
   ## cell-count-weighted pool of unlike regions.
   global_tbl <- animal_tbl |>
@@ -2245,7 +2304,7 @@ main <- function(config_path) {
   message("Read qc/dual_rate.csv and qc/composition.csv before the results.\n")
 
   invisible(list(cfg = cfg, dirs = dirs, cell_data = cell_data,
-                 animal_tbl = animal_tbl, qc = qc))
+                 animal_tbl = animal_tbl, subregion_tbl = subregion_tbl, qc = qc))
 }
 
 if (!interactive() && !exists("SOURCED_FOR_INTERACTIVE_USE")) {
