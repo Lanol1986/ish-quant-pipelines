@@ -175,3 +175,39 @@ was; two different tissues can be entirely different exposure compartments. A
 recode without a recorded reason is rejected at load time, and a recode is
 always scoped to specific animals so that a future sample with a correct label
 is not silently caught.
+
+
+## Platform-specific QC
+
+### QuPath chromogenic branch
+
+Use for RED RNAscope and DIG-DAB brightfield workflows. Record and review:
+
+- annotation/tissue area, cell counts and cells/mm2;
+- hematoxylin/nuclear segmentation and expansion settings;
+- stain-vector/deconvolution settings;
+- background in negative-control or vehicle material;
+- positive-control performance;
+- puncta/cluster regime and single-dot calibration;
+- threshold sensitivity and slide-to-slide staining drift.
+
+### HALO AI fluorescence branch
+
+Use for duplex and multiplex smRNA/mRNA RNAscope + antibodies. Record and review:
+
+- total cells, cells/mm2 and region coverage;
+- marker-positive, unclassified, dual/multi-positive cell fractions;
+- cell and nuclear area distributions;
+- marker intensity distributions around classification thresholds;
+- channel/background drift, saturation and unmixing/autofluorescence controls;
+- smRNA/mRNA positivity and burden;
+- panel concordance for shared cell types when multiple panels are integrated.
+
+Raw fluorescence intensity is not assumed comparable between independently run
+panels unless acquisition, amplification and unmixing were calibrated.
+
+## Nested anatomy QC
+
+When subregions/layers are configured, report their cell counts and coverage per
+animal. A missing cerebellar layer or very sparse layer should be visible in QC
+rather than silently disappearing from the regional result.
