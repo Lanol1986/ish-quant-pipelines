@@ -1,0 +1,72 @@
+schema_version: "1.0"
+study:
+  id: "SRS4119"
+  name: "SRS4119 BrS-Hprt1-siRNA activity atlas"
+paths:
+  input_dir: "../data/SRS4119/panel1"
+  output_dir: "../results/SRS4119_panel1"
+  id_regex: "^([23]\\.[1-4])_"
+panel:
+  name: "Panel 1"
+  input_dir: "../data/SRS4119/panel1"
+  file_pattern: "_object_detection\\.csv$"
+  id_regex: "^([23]\\.[1-4])_"
+  delimiter: ","
+  section_relationship: "consecutive_5um"
+design:
+  type: "two_group"
+  group_levels: ["Vehicle", "Hprt1-siRNA"]
+  control_group: "Vehicle"
+  animals:
+    - {animal_id: "2.1", group: "Hprt1-siRNA"}
+    - {animal_id: "2.2", group: "Hprt1-siRNA"}
+    - {animal_id: "2.3", group: "Hprt1-siRNA"}
+    - {animal_id: "2.4", group: "Hprt1-siRNA"}
+    - {animal_id: "3.1", group: "Vehicle"}
+    - {animal_id: "3.2", group: "Vehicle"}
+    - {animal_id: "3.3", group: "Vehicle"}
+    - {animal_id: "3.4", group: "Vehicle"}
+  expected_absent: {}
+anatomy:
+  fields:
+    region:
+      source_column: "Analysis Region"
+      levels: ["Cortex","Hippocampus","Front_Brain","Midbrain","Pons_Medulla","Cerebellum"]
+      aliases:
+        Front_Brain: ["Front Brain","Front-Brain"]
+        Pons_Medulla: ["Pons Medulla","Pons-Medulla"]
+endpoints:
+  - name: "Hprt1_siRNA"
+    source_column: "Hprt1_siRNA Copies"
+    kind: "estimated_spot_index"
+    role: "sirna"
+    unit: "estimated spots/cell"
+    positivity_threshold: 1
+    missing_policy: "zero_if_export_blank"
+  - name: "Hprt1_mRNA"
+    source_column: "Hprt1_mRNA Copies"
+    kind: "estimated_spot_index"
+    role: "target_mrna"
+    unit: "estimated spots/cell"
+    missing_policy: "zero_if_export_blank"
+markers: {}
+phenotypes:
+  Neurons: {source_column: "Neurons"}
+  Microglia: {source_column: "Microglia"}
+phenotype_policy: "report_ambiguous"
+qc:
+  ambiguous_phenotype_alarm_pct: 1
+spatial:
+  enabled: true
+  columns: {xmin: "XMin", xmax: "XMax", ymin: "YMin", ymax: "YMax"}
+  palette: "magma"
+  percentile_lower: 0.01
+  percentile_upper: 0.99
+  point_size: 0.25
+  alpha: 0.8
+presentation:
+  mRNA_display_range: [0,100]
+  vehicle_reference_line: 100
+output:
+  prefix: "SRS4119_Panel1"
+  dpi: 300
