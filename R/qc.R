@@ -89,3 +89,36 @@ ish_panel_concordance <- function(data,endpoint,metric,cell_type="All cells") {
                  pearson_r=if (sum(ok)>=3) stats::cor(w[[panels[1]]][ok],w[[panels[2]]][ok]) else NA_real_,
                  spearman_r=if (sum(ok)>=3) stats::cor(w[[panels[1]]][ok],w[[panels[2]]][ok],method="spearman") else NA_real_)
 }
+
+
+ish_specimen_qc_metrics <- function(data,cfg) {
+  cols <- grep("^qc_metric__",names(data),value=TRUE)
+  if (!length(cols)) return(tibble::tibble())
+  data |>
+    dplyr::group_by(panel,animal_id,group) |>
+    dplyr::summarise(dplyr::across(dplyr::all_of(cols),
+      list(median=~ish_safe_median(.x),
+           p10=~if (sum(is.finite(.x))) stats::quantile(.x,.10,na.rm=TRUE,names=FALSE) else NA_real_,
+           p90=~if (sum(is.finite(.x))) stats::quantile(.x,.90,na.rm=TRUE,names=FALSE) else NA_real_),
+      .names="{.col}__{.fn}"),.groups="drop")
+}
+
+ish_vehicle_background <- function(std,cfg) {
+  ctrl <- cfg$design$control_group
+  std |>
+    dplyr::filter(as.character(group)==ctrl,
+                  endpoint_role %in% c("sirna","compound"),
+                  metric=="pct_positive") |>
+    dplyr::select(dplyr::any_of(c("panel","animal_id","group","region","subregion","layer",
+      "cell_type","endpoint","metric","raw_value","n_cells")))
+}
+
+ish_vehicle_target_baseline <- function(std,cfg) {
+  ctrl <- cfg$design$control_group
+  std |>
+    dplyr::filter(as.character(group)==ctrl,
+                  endpoint_role=="target_mrna",
+                  metric=="mean_all") |>
+    dplyr::select(dplyr::any_of(c("panel","animal_id","group","region","subregion","layer",
+      "cell_type","endpoint","metric","raw_value","n_cells")))
+}
