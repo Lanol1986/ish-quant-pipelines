@@ -31,6 +31,13 @@ ish_run_single_panel <- function(config_path,assay_mode="multiplex") {
   marker_qc <- ish_marker_separation(data,cfg)
   if (nrow(marker_qc)) readr::write_csv(marker_qc,file.path(dirs$qc,"marker_separation.csv"))
 
+  specimen_qc <- ish_specimen_qc_metrics(data,cfg)
+  if (nrow(specimen_qc)) readr::write_csv(specimen_qc,file.path(dirs$qc,"specimen_qc_metrics.csv"))
+  bg <- ish_vehicle_background(std,cfg)
+  if (nrow(bg)) readr::write_csv(bg,file.path(dirs$qc,"vehicle_detection_background.csv"))
+  vb <- ish_vehicle_target_baseline(std,cfg)
+  if (nrow(vb)) readr::write_csv(vb,file.path(dirs$qc,"vehicle_target_mRNA_baseline.csv"))
+
   qstat <- ish_qc_status(data,cfg,rr$manifest)
   readr::write_csv(qstat,file.path(dirs$qc,"QC_STATUS.csv"))
 
