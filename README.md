@@ -1,242 +1,97 @@
-# RNAscope / ISH quantification toolkit
+# Quantitative ISH / RNAscope analysis framework
 
-Reusable R pipelines for quantifying RNAscope and related in situ hybridisation
-data for oligonucleotide therapeutic programmes.
+Reusable R pipelines for quantitative in-situ hybridisation and RNAscope analyses in oligonucleotide-therapeutic studies.
 
-Four pipelines, one self-contained R script each. Everything study-specific
-lives in a YAML config, so a new study needs a new config and no change to any
-script.
+## Core rules
 
----
+- **Animal is the biological replicate.** Cells, ROIs, sections and assay panels do not increase biological n.
+- **Single-panel analysis and multi-panel integration are separate.** Pipelines 01-04 validate one physical assay panel. Pipeline 05 integrates already-validated standardized outputs.
+- **Measurement semantics are explicit.** Genuine integer puncta counts, continuous HALO estimated-spot indices, area fractions and intensities are different endpoint types. Continuous estimates are never rounded/floored to make a count model run.
+- **Panel identity is preserved.** Consecutive sections from the same animal remain separate measurements in integrated figures.
+- **QC flags trigger review, not automatic exclusion.**
+- **Stored normalized values are never clipped.**
+- **Spatial maps use cell centroids and magma by default.** Consecutive sections are never treated as registered cell-to-cell maps.
 
-## The four pipelines
+## Pipelines
 
-| # | Script | Assay | Endpoint |
-|---|---|---|---|
-| 01 | `pipelines/01_biodistribution_chromogenic.R` | Probe against the compound, chromogenic, brightfield | Compound **distribution** |
-| 02 | `pipelines/02_target_kd_chromogenic.R` | Probe against the target transcript, chromogenic | **Knockdown** vs control, or dose **trend** |
-| 03 | `pipelines/03_multiplex_celltype.R` | Multiplex compound + target + antibodies, object level | Cell-type-resolved knockdown and uptake |
-| 04 | `pipelines/04_compound_distribution_ihc.R` | Compound probe + one antibody, four-way phenotype | Distribution by compartment |
+| Pipeline | Purpose |
+|---|---|
+| `pipelines/01_biodistribution_chromogenic.R` | Single-panel compound/oligonucleotide distribution |
+| `pipelines/02_target_kd_chromogenic.R` | Single-panel target-mRNA pharmacodynamics |
+| `pipelines/03_multiplex_celltype.R` | Single-panel compound/siRNA + target + cell-type analysis |
+| `pipelines/04_compound_distribution_ihc.R` | Single-panel compound + IHC phenotype analysis |
+| `pipelines/05_integrated_multipanel_analysis.R` | Integrated study-level analysis across validated panels |
 
-Pipeline 02 has two modes, set by `design$type`:
+## SRS4119
 
-- `two_group` / `multi_group` — group contrasts with the animal as the unit.
-- `dose_response` — where there is one animal per dose, no group contrast is
-  possible and none is attempted. A **trend across dose** is estimable and is
-  fitted from every animal.
+SRS4119 is the reference multi-panel study.
 
-Pipeline 04 has two input modes, set by `detection$export_level`:
+- Panel 1: Hprt1 siRNA passenger-strand signal + Hprt1 mRNA + neurons + microglia.
+- Panel 2: Hprt1 siRNA passenger-strand signal + Hprt1 mRNA + neurons + oligodendrocytes + endothelial cells.
+- Panels are consecutive 5-µm sections from the same animals.
+- Panel 1 and Panel 2 are **not independent replicates**.
+- Shared endpoints are shown visually separated in the same plot.
+- Panel-specific cell types retain panel provenance.
+- The integrated pipeline never matches cells across consecutive sections.
 
-- `summary` — aggregated exports, one row per image and analysis region. Prints
-  at startup what it cannot do rather than approximating it.
-- `object` — one row per cell. Enables the hurdle model and the subcellular
-  pattern statistic.
-
----
-
-## Install
-
-R 4.1 or later.
-
-```r
-install.packages(c(
-  "tidyverse", "fs", "yaml", "scales", "digest",     # required
-  "glmmTMB", "emmeans", "performance",               # modelling
-  "FNN", "ragg"                                      # QC and graphics
-))
-```
-
-Modelling packages are optional. Without them the descriptive and QC parts of
-every pipeline still run and report what was skipped.
-
-`ragg` is worth having on a cluster. Without a UTF-8 locale, R silently replaces
-en-dashes and `>=` in plot labels with dots and only warns through `mbcsToSbcs`.
-
----
-
-## Run
+Run each panel first, then integrate:
 
 ```bash
-Rscript pipelines/02_target_kd_chromogenic.R config/my_study.yml
+Rscript pipelines/03_multiplex_celltype.R config/SRS4119_panel1.yml
+Rscript pipelines/03_multiplex_celltype.R config/SRS4119_panel2.yml
+Rscript pipelines/05_integrated_multipanel_analysis.R config/SRS4119_integration.yml
 ```
 
-From a Jupyter notebook with the R kernel, see `notebooks/`:
+## Endpoint types
 
-```r
-CONFIG_PATH <- "config/my_study.yml"
-source("pipelines/02_target_kd_chromogenic.R")
+`endpoints[].kind` controls what analysis is allowed:
+
+- `integer_count` — genuine discrete puncta counts; a two-part count analysis may be fitted.
+- `estimated_spot_index` — cluster/intensity-derived estimate; treat as continuous and never floor/round.
+- `area_fraction`
+- `integrated_intensity`
+- `continuous`
+- `proportion`
+
+For genuine integer counts, the framework defines a two-part analysis as:
+1. occurrence above the positivity threshold;
+2. a **zero-truncated negative-binomial** model among positive observations.
+
+A regular negative-binomial model with `ziformula` is zero-inflated, not a hurdle model.
+
+## Standardized result table
+
+Each panel exports an animal-level tidy table with fields such as:
+
+`study_id, animal_id, group, panel, section_id, organ, region, subregion, layer, cell_type, endpoint, metric, raw_value, normalized_value, unit, n_cells`.
+
+This is the interface to pipeline 05 and to future scRNA-seq, snRNA-seq, qPCR or LC-MS concordance analyses.
+
+## Presentation versus scientific figures
+
+Important endpoints can generate:
+
+- `FULL_SCIENTIFIC`: unrestricted values, full annotation.
+- `PRESENTATION_COMPACT`: slide-ready, minimal internal title, individual animal points, and a 0-100% display for mRNA remaining where desired.
+
+The compact mRNA renderer does not change stored values. Out-of-range points are flagged.
+
+## Spatial analysis
+
+Spatial plots use actual cell centroids, `magma`, and configurable percentile display limits. Display limits are recorded in metadata.
+
+## Migration status
+
+The original root scripts are retained temporarily as **legacy reference code**. New development occurs under `R/`, `pipelines/`, `config/`, `docs/`, and `tests/`.
+
+The legacy scripts should only be removed after real-study regression testing confirms that the modular framework reproduces validated outputs where the scientific estimand is unchanged.
+
+## Validation
+
+Run:
+
+```bash
+Rscript tests/run_tests.R
 ```
 
-The notebooks are thin drivers. Keeping the logic in `.R` files means git diffs
-are readable and the same code runs unattended.
-
----
-
-## Output
-
-```
-results/
-├── tables/          animal-level summaries, relative-to-control, null distribution
-├── plots/           figures, one point per animal
-├── qc/              every QC table; read these first
-├── models/          fitted models, coefficient tables, ICC
-├── run_manifest/    config copy + hash, input file hashes, sessionInfo, git commit
-├── METHODS_STUB.md  methods section populated from the config
-└── EVIDENCE_BOUNDARIES.txt   (compound-detection pipelines)
-```
-
-The run manifest lists every config field left blank under
-`unrecorded_parameters`. That list is itself a finding: the commonest
-reproducibility failure in this field is that the decisive parameter tuning
-happened inside a GUI and was never written down.
-
----
-
-## What the pipelines enforce
-
-**One row of the analysed data frame is one animal.** Cells are nested in
-sections within animals. Cells from one animal are not independent observations
-of the treatment; the animal is. Treating them as independent inflates type I
-error severely, and using animal as a batch covariate does not fix it.
-Cell-level tables exist here only as QC.
-
-**No boxplot over fewer than four animals.** A box across two points invents
-quartiles. `plot_animal_points()` falls back to points and a mean bar and says
-so in the caption.
-
-**Nothing is clipped.** A one-sided clip such as `pmax(100 - remaining, 0)`
-censors every animal above the control mean to exactly zero while animals below
-it contribute fully. The mean of that is biased upward whenever there is
-between-animal spread and can never be negative, so it reports an effect even
-when the groups are identical. A negative knockdown is information.
-
-**Every ratio comes with its null.** `control_null_distribution()` applies the
-same normalisation to the control animals with a leave-one-out reference, and
-`null_effect_summary()` reports the apparent effect that produces. Run it before
-quoting any effect size: if the treated effect sits inside the
-control-versus-control spread, there is no effect to report.
-
-**Counts are counts, or they are called an index.** An "estimated spots" or
-"copies" column derived from cluster area or intensity is a model output built
-on an assumed single-dot value. `qc_expression_regime()` reports which regime
-each stratum is in, and the modelling functions refuse non-integer input rather
-than fitting a negative binomial to a continuous estimate.
-
-**Degenerate statistics are flagged.** When most cells are at zero, a per-animal
-median is pinned to a small integer and a ratio built on it can take only a
-handful of values. `check_degenerate_summaries()` catches that before it becomes
-a figure.
-
-**Thresholds come from the negative control**, as mean plus one SD of non-zero
-puncta. `qc_threshold_sweep()` then shows whether the result survives a
-different choice.
-
-**Absences are declared.** `assert_roster()` stops if an animal in the config
-has no file, or a file has no config entry. An exclusion goes in
-`design$expected_absent` with an image-based reason recorded before the numbers
-were seen.
-
-**Missing measurements are not zeros.** Pipeline 04 flags a marker count of zero
-against its stratum median and masks every marker-derived quantity there.
-Otherwise a percentage divides by zero and vanishes from its panel with a
-"Removed n rows" warning, while a density divides by area, comes out as a clean
-zero, and is plotted on the axis where it reads as a real observation.
-
-**Never divide by a housekeeping probe.** Degradation hits high-expressing
-housekeepers hardest and low-to-moderate expressors least, so the control's
-response to a pre-analytical insult is not proportional to the target's and the
-ratio adds noise instead of cancelling artefact. Use one as a **sample-level
-inclusion gate** (`housekeeping_inclusion_gate()`): if a sample fails, drop it;
-do not rescue it by dividing.
-
----
-
-## Statistical approach
-
-Transcription is bursty, so steady-state counts are negative binomial rather
-than Poisson, with further overdispersion from cell heterogeneity,
-section-plane truncation and detection-efficiency variation across a slide.
-
-Zeros come in two kinds: structural (the cell does not express) and sampling (it
-does, but this plane missed it). A single negative binomial cannot separate
-them. A hurdle can, and its two parts are exactly the two quantities usually
-reported by hand:
-
-- **Part 1**, logistic on P(count > 0) — the *% positive cells*.
-- **Part 2**, zero-truncated NB on the rest — the *puncta per positive cell*.
-
-Fitting both says which component moved. A treatment that recruits more cells
-into expression is different biology from one that raises output per expressing
-cell, and a test on mean counts per cell cannot distinguish them.
-
-```r
-m <- glmmTMB(
-  spots_single ~ group + (1 | animal_id/section_id),
-  family    = nbinom2,
-  ziformula = ~ group,
-  data      = cells)
-```
-
-Unequal exposure goes in as `offset(log(area_mm2))`, never a pre-computed ratio,
-which forces the exposure coefficient to exactly 1 and discards the precision
-information. Counts are never `log(x+1)` transformed; the log is a **link**.
-
-The ICC is reported. At 0.3, 500 cells per animal carry roughly the information
-of three independent observations.
-
-Multiplicity is BH-FDR across the declared grid. `design_power_note()` prints
-the smallest achievable two-sided Wilcoxon p for the group sizes in the config:
-at 4 vs 4 that is 0.029, and at 3 vs 3 it is 0.10, so no amount of separation
-can reach 0.05.
-
-Full background in `docs/STATISTICAL_NOTES.md`.
-
----
-
-## Interpretive limits for oligonucleotide work
-
-Written to `EVIDENCE_BOUNDARIES.txt` by pipelines 01, 03 and 04. In short:
-
-- **Detected compound is not active compound.** Two uptake pathways exist, one
-  ending in the endolysosome where the oligonucleotide is inert. Knockdown does
-  not correlate with bulk intracellular accumulation; measured endosomal escape
-  is 1–2%, while fewer than 2,000 cytosolic copies suffice to silence. Report
-  presence and pattern. Perinuclear versus peripheral distribution has
-  distinguished productive from non-productive uptake where total amount did not.
-- **No limit of detection has been published** for oligonucleotide ISH in any
-  units. A negative region means "below an unknown threshold", not "no compound".
-- **No correlation against LC-MS or hybridisation-ELISA** tissue concentration
-  has been published. Do not phrase the readout as a concentration.
-- **Full-length compound versus n-1 or chain-shortened metabolites** is untested
-  by these assays. Only LC-MS/MS answers that.
-- For siRNA, **state which strand the probe targets**. Passenger-strand
-  persistence is a weaker activity proxy than guide, since the passenger is
-  discarded on RISC loading.
-
----
-
-## Layout
-
-```
-pipelines/    one self-contained script per assay type
-config/       study_config_TEMPLATE.yml + one worked example per pipeline
-notebooks/    thin Jupyter drivers
-docs/         methods checklist, QC reference, statistical notes, first-run guide
-```
-
-Each pipeline script has the same eleven sections: environment, utilities,
-configuration, input, quality control, aggregation, relative to control, models,
-figures, provenance, main. The shared sections are identical across the four
-files by design: each script is portable on its own, and a change to shared
-logic is a deliberate, visible edit in each file rather than an invisible
-side-effect of editing a library.
-
----
-
-## Status
-
-**Not yet executed against real data.** The code is written against the column
-names and value ranges these exports normally carry, but it has not been run end
-to end. Do a dry run on one study before relying on it, and expect to adjust the
-column mappings in the config first. `docs/FIRST_RUN_CHECKLIST.md` lists what to
-check and in what order.
+SRS4119 raw exports are not stored in this public repository. End-to-end numerical regression on the real study therefore remains an explicit pre-merge validation step in the study environment.
