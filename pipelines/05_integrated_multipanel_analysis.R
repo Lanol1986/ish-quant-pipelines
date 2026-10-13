@@ -1,0 +1,10 @@
+#!/usr/bin/env Rscript
+args_all <- commandArgs(trailingOnly=FALSE)
+fa <- grep("^--file=",args_all,value=TRUE)
+script_path <- if (length(fa)) normalizePath(sub("^--file=","",fa[1])) else normalizePath("pipelines/05_integrated_multipanel_analysis.R")
+repo_root <- dirname(dirname(script_path))
+source(file.path(repo_root,"R","load.R"))
+ish_source_core(repo_root)
+args <- commandArgs(trailingOnly=TRUE)
+if (!length(args)) stop("Usage: Rscript pipelines/05_integrated_multipanel_analysis.R <integration_config.yml>",call.=FALSE)
+RESULT <- ish_run_integration(args[1])

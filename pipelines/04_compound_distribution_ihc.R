@@ -1,0 +1,10 @@
+#!/usr/bin/env Rscript
+args_all <- commandArgs(trailingOnly=FALSE)
+fa <- grep("^--file=",args_all,value=TRUE)
+script_path <- if (length(fa)) normalizePath(sub("^--file=","",fa[1])) else normalizePath("pipelines/04_compound_distribution_ihc.R")
+repo_root <- dirname(dirname(script_path))
+source(file.path(repo_root,"R","load.R"))
+ish_source_core(repo_root)
+args <- commandArgs(trailingOnly=TRUE)
+if (!length(args)) stop("Usage: Rscript pipelines/04_compound_distribution_ihc.R <config.yml>",call.=FALSE)
+RESULT <- ish_run_single_panel(args[1],assay_mode="compound_distribution_ihc")

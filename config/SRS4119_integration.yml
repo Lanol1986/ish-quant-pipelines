@@ -1,0 +1,85 @@
+schema_version: "1.0"
+study:
+  id: "SRS4119"
+  name: "SRS4119 integrated multipanel RNAscope analysis"
+design:
+  biological_unit: "animal_id"
+  panels_independent_replicates: false
+  control_group: "Vehicle"
+  animals:
+    - {animal_id: "2.1", group: "Hprt1-siRNA"}
+    - {animal_id: "2.2", group: "Hprt1-siRNA"}
+    - {animal_id: "2.3", group: "Hprt1-siRNA"}
+    - {animal_id: "2.4", group: "Hprt1-siRNA"}
+    - {animal_id: "3.1", group: "Vehicle"}
+    - {animal_id: "3.2", group: "Vehicle"}
+    - {animal_id: "3.3", group: "Vehicle"}
+    - {animal_id: "3.4", group: "Vehicle"}
+panels:
+  panel_1:
+    display_name: "Panel 1"
+    standardized_results: "../results/SRS4119_panel1/tables/standardized_results.csv"
+    cell_proportions: "../results/SRS4119_panel1/qc/cell_proportions.csv"
+  panel_2:
+    display_name: "Panel 2"
+    standardized_results: "../results/SRS4119_panel2/tables/standardized_results.csv"
+    cell_proportions: "../results/SRS4119_panel2/qc/cell_proportions.csv"
+integration:
+  panel_relationship: "consecutive_5um_sections_same_animals"
+  global_method: "equal_region_mean"
+  shared_measurements:
+    neuronal_siRNA: {endpoint: "Hprt1_siRNA", metric: "pct_positive", cell_type: "Neurons"}
+    neuronal_mRNA: {endpoint: "Hprt1_mRNA", metric: "mean_all", cell_type: "Neurons"}
+  main_figures:
+    01_GLOBAL_siRNA_distribution:
+      scope: "global_shared"
+      endpoint: "Hprt1_siRNA"
+      metric: "pct_positive"
+      cell_type: "All cells"
+      y_label: "siRNA-positive cells (%)"
+      title: "Global cell-associated siRNA detection"
+    02_REGIONAL_siRNA_distribution:
+      scope: "regional"
+      endpoint: "Hprt1_siRNA"
+      metric: "pct_positive"
+      cell_type: "All cells"
+      y_label: "siRNA-positive cells (%)"
+      title: "Regional cell-associated siRNA detection"
+    03_CELLTYPE_siRNA_distribution:
+      scope: "celltype"
+      endpoint: "Hprt1_siRNA"
+      metric: "pct_positive"
+      y_label: "siRNA-positive cells (%)"
+      title: "Cell-associated siRNA detection by cell type"
+    04_CELLTYPE_siRNA_burden:
+      scope: "celltype"
+      endpoint: "Hprt1_siRNA"
+      metric: "median_positive"
+      y_label: "Median estimated siRNA spots per positive cell"
+      title: "Cell-associated siRNA burden by cell type"
+    05_GLOBAL_mRNA_remaining:
+      scope: "global_shared"
+      endpoint: "Hprt1_mRNA"
+      metric: "mean_all"
+      cell_type: "All cells"
+      y_label: "Hprt1 mRNA remaining (% vehicle)"
+      title: "Global Hprt1 mRNA remaining"
+      reference_line: 100
+    06_REGIONAL_mRNA_remaining:
+      scope: "regional"
+      endpoint: "Hprt1_mRNA"
+      metric: "mean_all"
+      cell_type: "All cells"
+      y_label: "Hprt1 mRNA remaining (% vehicle)"
+      title: "Regional Hprt1 mRNA remaining"
+      reference_line: 100
+    07_CELLTYPE_mRNA_remaining:
+      scope: "celltype"
+      endpoint: "Hprt1_mRNA"
+      metric: "mean_all"
+      y_label: "Hprt1 mRNA remaining (% vehicle)"
+      title: "Hprt1 mRNA remaining by cell type"
+      reference_line: 100
+output:
+  root: "../results/SRS4119_integrated"
+  dpi: 300
