@@ -40,6 +40,7 @@ ish_load_config <- function(path) {
   cfg$panel$delimiter <- cfg$panel$delimiter %||% ","
   cfg$phenotypes <- cfg$phenotypes %||% list()
   cfg$markers <- cfg$markers %||% list()
+  cfg$qc_metrics <- cfg$qc_metrics %||% list()
   cfg$qc <- cfg$qc %||% list()
   cfg$spatial <- cfg$spatial %||% list(enabled=FALSE)
   cfg$presentation <- cfg$presentation %||% list()
