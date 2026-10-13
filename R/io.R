@@ -57,9 +57,10 @@ ish_required_source_columns <- function(cfg) {
   ep <- vapply(cfg$endpoints, function(x) x$source_column, character(1))
   ph <- unlist(lapply(cfg$phenotypes, function(x) x$source_column), use.names=FALSE)
   mk <- unlist(lapply(cfg$markers, function(x) c(x$positivity_column,x$intensity_column)), use.names=FALSE)
+  qm <- unlist(lapply(cfg$qc_metrics %||% list(), function(x) x$source_column), use.names=FALSE)
   an <- unlist(lapply(cfg$anatomy$fields %||% list(), function(x) x$source_column), use.names=FALSE)
   sp <- unlist(cfg$spatial$columns %||% list(), use.names=FALSE)
-  unique(stats::na.omit(c(ep,ph,mk,an,sp)))
+  unique(stats::na.omit(c(ep,ph,mk,qm,an,sp)))
 }
 
 ish_read_one_export <- function(path, cfg) {
@@ -83,6 +84,10 @@ ish_read_one_export <- function(path, cfg) {
     m <- cfg$markers[[nm]]
     if (!is.null(m$positivity_column)) out[[paste0(nm,"_positive")]] <- ish_as_positive_flag(df[[m$positivity_column]])
     if (!is.null(m$intensity_column)) out[[paste0(nm,"_intensity")]] <- suppressWarnings(as.numeric(df[[m$intensity_column]]))
+  }
+  for (nm in names(cfg$qc_metrics %||% list())) {
+    q <- cfg$qc_metrics[[nm]]
+    out[[paste0("qc_metric__",nm)]] <- suppressWarnings(as.numeric(df[[q$source_column]]))
   }
   for (nm in names(cfg$anatomy$fields %||% list())) {
     out[[paste0("anatomy_raw__",nm)]] <- as.character(df[[cfg$anatomy$fields[[nm]]$source_column]])
