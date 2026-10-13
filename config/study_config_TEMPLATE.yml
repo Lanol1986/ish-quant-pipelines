@@ -54,6 +54,15 @@ endpoints:
     missing_policy: "zero_if_export_blank"
 
 markers: {}
+  # NeuN:
+  #   positivity_column: "NeuN Positive"
+  #   intensity_column: "NeuN Nucleus Intensity"
+
+qc_metrics: {}
+  # DAPI_Nucleus_Intensity:
+  #   source_column: "DAPI Nucleus Intensity"
+  # Cell_Area:
+  #   source_column: "Cell Area (µm²)"
 
 phenotypes: {}
   # Neurons:
