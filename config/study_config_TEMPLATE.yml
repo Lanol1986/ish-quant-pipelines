@@ -1,0 +1,82 @@
+schema_version: "1.0"
+
+study:
+  id: "STUDY_ID"
+  name: "Study title"
+
+paths:
+  input_dir: "../data/STUDY_ID/panel"
+  output_dir: "../results/STUDY_ID/panel"
+  id_regex: "^([A-Za-z0-9.]+?)_"
+
+panel:
+  name: "Panel 1"
+  input_dir: "../data/STUDY_ID/panel"
+  file_pattern: "_object_detection\\.csv$"
+  id_regex: "^([A-Za-z0-9.]+?)_"
+  delimiter: ","
+  section_relationship: "single_panel"
+
+design:
+  type: "two_group"
+  group_levels: ["Vehicle", "Treated"]
+  control_group: "Vehicle"
+  animals:
+    - {animal_id: "A1", group: "Vehicle"}
+    - {animal_id: "A2", group: "Vehicle"}
+    - {animal_id: "B1", group: "Treated"}
+    - {animal_id: "B2", group: "Treated"}
+  expected_absent: {}
+
+anatomy:
+  fields:
+    region:
+      source_column: "Analysis Region"
+      levels: ["RegionA", "RegionB"]
+      aliases: {}
+    # subregion:
+    #   source_column: "Analysis Region"
+    #   levels: ["Layer1", "Layer2"]
+
+endpoints:
+  - name: "compound_signal"
+    source_column: "Compound Copies"
+    kind: "estimated_spot_index"
+    role: "compound"
+    unit: "estimated spots/cell"
+    positivity_threshold: 1
+    missing_policy: "zero_if_export_blank"
+  - name: "target_mRNA"
+    source_column: "Target_mRNA Copies"
+    kind: "estimated_spot_index"
+    role: "target_mrna"
+    unit: "estimated spots/cell"
+    missing_policy: "zero_if_export_blank"
+
+markers: {}
+
+phenotypes: {}
+  # Neurons:
+  #   source_column: "Neurons"
+
+phenotype_policy: "report_ambiguous"
+
+qc:
+  ambiguous_phenotype_alarm_pct: 5
+
+spatial:
+  enabled: true
+  columns: {xmin: "XMin", xmax: "XMax", ymin: "YMin", ymax: "YMax"}
+  palette: "magma"
+  percentile_lower: 0.01
+  percentile_upper: 0.99
+  point_size: 0.35
+  alpha: 0.85
+
+presentation:
+  mRNA_display_range: [0, 100]
+  vehicle_reference_line: 100
+
+output:
+  prefix: "STUDY_ID"
+  dpi: 300
