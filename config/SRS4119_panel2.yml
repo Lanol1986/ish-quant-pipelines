@@ -49,7 +49,19 @@ endpoints:
     role: "target_mrna"
     unit: "estimated spots/cell"
     missing_policy: "zero_if_export_blank"
-markers: {}
+markers:
+  NeuN:
+    positivity_column: "NeuN Positive"
+    intensity_column: "NeuN Nucleus Intensity"
+  Olig2:
+    positivity_column: "Olig2 Positive"
+    intensity_column: "Olig2 Nucleus Intensity"
+  CD34:
+    positivity_column: "CD34 Positive"
+    intensity_column: "CD34 Cytoplasm Intensity"
+qc_metrics:
+  DAPI_Nucleus_Intensity: {source_column: "DAPI Nucleus Intensity"}
+  Cell_Area: {source_column: "Cell Area (µm²)"}
 phenotypes:
   Neurons: {source_column: "Neurons"}
   Oligodendrocytes: {source_column: "Oligodendrocytes"}
