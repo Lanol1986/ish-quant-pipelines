@@ -49,7 +49,16 @@ endpoints:
     role: "target_mrna"
     unit: "estimated spots/cell"
     missing_policy: "zero_if_export_blank"
-markers: {}
+markers:
+  NeuN:
+    positivity_column: "NeuN Positive"
+    intensity_column: "NeuN Nucleus Intensity"
+  Iba1:
+    positivity_column: "Iba1 Positive"
+    intensity_column: "Iba1 Cytoplasm Intensity"
+qc_metrics:
+  DAPI_Nucleus_Intensity: {source_column: "DAPI Nucleus Intensity"}
+  Cell_Area: {source_column: "Cell Area (µm²)"}
 phenotypes:
   Neurons: {source_column: "Neurons"}
   Microglia: {source_column: "Microglia"}
